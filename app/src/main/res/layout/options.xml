@@ -17,57 +17,22 @@
         android:textAppearance="@style/TextAppearance.AppCompat.Large" />
 
     <EditText
-        android:id="@+id/editTextUserId"
+        android:id="@+id/editTextPlaylistsUrl"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="User ID" />
+        android:hint="Playlists URL" />
 
     <EditText
-        android:id="@+id/editTextApiKey"
+        android:id="@+id/editTextPlaylist"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="API Key" />
+        android:hint="Playlist Name" />
 
     <Button
         android:id="@+id/btnLoadConfig"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Load above settings from config.txt" />
-
-    <TextView
-        android:id="@+id/textView2"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20sp"
-        android:text="Slideshow options:"
-        android:textAppearance="@style/TextAppearance.AppCompat.Large" />
-
-    <RadioGroup
-        android:id="@+id/optionsRadioGroup"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:orientation="vertical">
-
-        <RadioButton
-            android:id="@+id/radioOption1"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Show my photos" />
-
-        <RadioButton
-            android:id="@+id/radioOption2"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Show public photos tagged 'ElectricObjectsLives'" />
-
-        <RadioButton
-            android:id="@+id/radioOption3"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Show photos tagged with..." />
-
-    </RadioGroup>
 
     <EditText
         android:id="@+id/editTextCustomTag"
@@ -112,16 +77,16 @@
         android:id="@+id/textView4"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Slideshow interval (in minutes):"
         android:layout_marginTop="20sp"
+        android:text="Slideshow interval (in seconds):"
         android:textAppearance="@style/TextAppearance.AppCompat.Large" />
 
     <EditText
         android:id="@+id/editTextInterval"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:inputType="number"
-        android:hint="5" />
+        android:hint="300"
+        android:inputType="number" />
 
 
     <TextView

@@ -72,20 +72,18 @@ public class MyMessageService extends Service {
                 public void run() {
                     Intent intent = new Intent("MSG_RECEIVED");
                     String type = "";
+
+                    Log.e("hi", message);
+
                     if (message.startsWith("image,") || message.startsWith("video,")) {
                         type = message.substring(0, ("image,".length()) - 1);
 
-                        intent.putExtra("imageid", message.replace("image,", "").replace("video,", ""));
+                        intent.putExtra("url", message.replace("image,", "").replace("video,", ""));
                         intent.putExtra("type", type);
                     }
 
                     if (message.startsWith("resume")) {
                         intent.putExtra("type", "resume");
-                    }
-
-                    if (message.startsWith("tag")) {
-                        intent.putExtra("type", "tag");
-                        intent.putExtra("tag", message.replace("tag,",""));
                     }
 
                     if (message.startsWith("brightness")) {
@@ -103,6 +101,12 @@ public class MyMessageService extends Service {
                         intent.putExtra("startQuietHour", Integer.parseInt(opts[2]));
                         intent.putExtra("endQuietHour", Integer.parseInt(opts[3]));
 
+                    }
+
+                    if (message.startsWith("playlist")) {
+                        intent.putExtra("type", "playlist");
+                        String playlist = message.replace("playlist,", "");
+                        intent.putExtra("playlist", playlist);
                     }
 
                     LocalBroadcastManager.getInstance(MyMessageService.this).sendBroadcast(intent);

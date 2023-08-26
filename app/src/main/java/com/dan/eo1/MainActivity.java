@@ -54,34 +54,41 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
 
+import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
 public class MainActivity extends AppCompatActivity {
 
-    public int per_page = 500; //500 max
-    public int interval = 5;
+    public int interval = 300;
     public int tempid = 0;
     private int currentPosition = 0;
     private Handler handler = new Handler();
     private ImageView imageView;
     private VideoView videoView;
-    private String apikey = "";
-    private String userid = "";
-    private int displayOption = 0;
+
+    private String playlistsUrl = "";
+    private String playlist = "";
+
+
     private int startQuietHour = -1;
     private int endQuietHour = -1;
-    private List<FlickrPhoto> flickrPhotos;
+    private List<String> mediaItems;
     private boolean isInQuietHours = false;
-    private String customTag = "";
     private SensorManager mSensorManager;
     private Sensor mLightSensor;
     private float lastLightLevel;
@@ -105,19 +112,15 @@ public class MainActivity extends AppCompatActivity {
         }
 
         SharedPreferences settings = getSharedPreferences("prefs", MODE_PRIVATE);
-        userid = settings.getString("userid", "");
-        apikey = settings.getString("apikey", "");
-        displayOption = settings.getInt("displayOption", 0);
+        playlistsUrl = settings.getString("playlistsUrl", "");
+        playlist = settings.getString("playlist", "");
         startQuietHour = settings.getInt("startQuietHour", -1);
         endQuietHour = settings.getInt("endQuietHour", -1);
-        customTag = settings.getString("customTag", "");
-        interval = settings.getInt("interval", 5);
+        interval = settings.getInt("interval", 300);
         autobrightness = settings.getBoolean("autobrightness", true);
         brightnesslevel = settings.getFloat("brightnesslevel", 0.5f);
 
-        if (displayOption != 2) customTag = "";
-
-        if (userid.isEmpty() || apikey.isEmpty()) {
+        if (playlistsUrl.isEmpty() || playlist.isEmpty()) {
             showSetupDialog();
         }
 
@@ -147,8 +150,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
 
-        if (!userid.isEmpty() && !apikey.isEmpty()) {
-            loadImagesFromFlickr();
+        if (!playlistsUrl.isEmpty() || !playlist.isEmpty()) {
+            loadImagesFromWeb();
         }
     }
 
@@ -199,8 +202,9 @@ public class MainActivity extends AppCompatActivity {
         View customLayout = getLayoutInflater().inflate(R.layout.options, null);
         builder.setView(customLayout);
 
-        final EditText userIdEditText = customLayout.findViewById(R.id.editTextUserId);
-        final EditText apiKeyEditText = customLayout.findViewById(R.id.editTextApiKey);
+        final EditText playlistsUrlEditText = customLayout.findViewById(R.id.editTextPlaylistsUrl);
+        final EditText playlistEditText = customLayout.findViewById(R.id.editTextPlaylist);
+
         final Spinner startHourSpinner = customLayout.findViewById(R.id.startHourSpinner);
         final Spinner endHourSpinner = customLayout.findViewById(R.id.endHourSpinner);
         final Button btnLoadConfig = customLayout.findViewById(R.id.btnLoadConfig);
@@ -209,28 +213,14 @@ public class MainActivity extends AppCompatActivity {
         final CheckBox cbAutoBrightness = customLayout.findViewById(R.id.cbBrightnessAuto);
         final SeekBar sbBrightness = customLayout.findViewById(R.id.sbBrightness);
 
-        userIdEditText.setText(userid);
-        apiKeyEditText.setText(apikey);
-        editTextCustomTag.setText(customTag);
+        playlistsUrlEditText.setText(playlistsUrl);
+        playlistEditText.setText(playlist);
+
         editTextInterval.setText(String.valueOf(interval));
         if (autobrightness) {
             cbAutoBrightness.setChecked(true);
             sbBrightness.setVisibility(View.GONE);
         }
-
-        RadioGroup optionsRadioGroup = customLayout.findViewById(R.id.optionsRadioGroup);
-        optionsRadioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup group, int checkedId) {
-                if (checkedId == R.id.radioOption3) {
-                    editTextCustomTag.setVisibility(View.VISIBLE);
-                    editTextCustomTag.setText(customTag);
-                } else {
-                    editTextCustomTag.setVisibility(View.GONE);
-                    customTag = ""; // Clear the customTag when not applicable
-                }
-            }
-        });
 
         sbBrightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -259,15 +249,6 @@ public class MainActivity extends AppCompatActivity {
                     sbBrightness.setVisibility(View.VISIBLE);
             }
         });
-
-        editTextCustomTag.setVisibility(View.GONE);
-        if (displayOption == 0) ((RadioButton) customLayout.findViewById(R.id.radioOption1)).setChecked(true);
-        if (displayOption == 1) ((RadioButton) customLayout.findViewById(R.id.radioOption2)).setChecked(true);
-        if (displayOption == 2) {
-            ((RadioButton) customLayout.findViewById(R.id.radioOption3)).setChecked(true);
-            editTextCustomTag.setVisibility(View.VISIBLE);
-            editTextCustomTag.setText(customTag);
-        }
 
         // Set up the Spinners for start and end hour
         String[] hours = new String[24];
@@ -301,8 +282,8 @@ public class MainActivity extends AppCompatActivity {
                         e.printStackTrace();
                     }
 
-                    userIdEditText.setText(sb.toString().split("\n")[0]);
-                    apiKeyEditText.setText(sb.toString().split("\n")[1]);
+                    playlistsUrlEditText.setText(sb.toString().split("\n")[0]);
+                    playlistEditText.setText(sb.toString().split("\n")[1]);
                 }
             }
         });
@@ -313,24 +294,27 @@ public class MainActivity extends AppCompatActivity {
                 .setPositiveButton("Save", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        userid = userIdEditText.getText().toString().trim();
-                        apikey = apiKeyEditText.getText().toString().trim();
-                        displayOption = getSelectedOptionIndex(optionsRadioGroup);
+                        playlistsUrl = playlistsUrlEditText.getText().toString().trim();
+
+                        // Remove trailing slash from playlists URL if it exists
+                        if (playlistsUrl.endsWith("/")) {
+                            playlistsUrl = playlistsUrl.substring(0, playlistsUrl.length() - 1);
+                        }
+
+                        playlist = playlistEditText.getText().toString().trim();
+
                         startQuietHour = Integer.parseInt(startHourSpinner.getSelectedItem().toString());
                         endQuietHour = Integer.parseInt(endHourSpinner.getSelectedItem().toString());
-                        customTag = editTextCustomTag.getText().toString().trim();
                         interval = Integer.parseInt(editTextInterval.getText().toString().trim());
                         autobrightness = cbAutoBrightness.isChecked();
 
-                        if (!userid.isEmpty() && !apikey.isEmpty()) {
+                        if (!playlistsUrl.isEmpty() && !playlist.isEmpty()) {
                             SharedPreferences settings = getSharedPreferences("prefs", MODE_PRIVATE);
                             SharedPreferences.Editor editor = settings.edit();
-                            editor.putString("userid", userid);
-                            editor.putString("apikey", apikey);
-                            editor.putInt("displayOption", displayOption);
+                            editor.putString("playlistsUrl", playlistsUrl);
+                            editor.putString("playlist", playlist);
                             editor.putInt("startQuietHour", startQuietHour);
                             editor.putInt("endQuietHour", endQuietHour);
-                            editor.putString("customTag", customTag);
                             editor.putInt("interval", interval);
                             editor.putBoolean("autobrightness", autobrightness);
                             editor.putFloat("brightnesslevel", brightnesslevel);
@@ -338,7 +322,7 @@ public class MainActivity extends AppCompatActivity {
 
                             Toast.makeText(MainActivity.this, "Saved!  Hit 'C' to come back here later.", Toast.LENGTH_SHORT).show();
 
-                            loadImagesFromFlickr();
+                            loadImagesFromWeb();
                         } else {
                             Toast.makeText(MainActivity.this, "Please enter User ID and API Key", Toast.LENGTH_SHORT).show();
                         }
@@ -387,35 +371,31 @@ public class MainActivity extends AppCompatActivity {
                     }
                     showNextImage();
                 }
-                handler.postDelayed(this, 60000 * interval);
+                handler.postDelayed(this, 1000 * interval);
             }
-        }, 60000 * interval);
+        }, 1000 * interval);
 
         showNextImage();
     }
 
     private void showNextImage() {
-        if (flickrPhotos != null && !flickrPhotos.isEmpty() && slideshowpaused==false) {
-            if (currentPosition >= flickrPhotos.size()) {
-                loadImagesFromFlickr(); return;
+
+        if (mediaItems != null && !mediaItems.isEmpty() && slideshowpaused==false) {
+            if (currentPosition >= mediaItems.size()) {
+                loadImagesFromWeb(); return;
             }
 
             try {
-                String mediatype = flickrPhotos.get(currentPosition).getMedia();
 
-                if (!mediatype.equals("video")) {
+                String mediaItem = mediaItems.get(currentPosition);
+
+                if (!mediaItem.endsWith(".mp4")) {
                     videoView.setVisibility(View.INVISIBLE);
                     imageView.setVisibility(View.VISIBLE);
 
-                    if (flickrPhotos.get(currentPosition).getUrlO() == null) {
-                        currentPosition++;
-                        showNextImage();
-                        return;
-                    } else {
-                        String imageUrl = flickrPhotos.get(currentPosition).getUrlO().toString().replace("_o", "_k");
-                        Picasso.get().load(imageUrl).fit().centerInside().into(imageView); //Picasso.get().load(imageUrl).fit().centerCrop().into(imageView);
-                        progress.setVisibility(View.INVISIBLE);
-                    }
+                    String imageUrl = mediaItem;
+                    Picasso.get().load(imageUrl).fit().centerInside().into(imageView); //Picasso.get().load(imageUrl).fit().centerCrop().into(imageView);
+                    progress.setVisibility(View.INVISIBLE);
 
                 } else {
                     imageView.setVisibility(View.INVISIBLE);
@@ -425,12 +405,7 @@ public class MainActivity extends AppCompatActivity {
                     mediaController.setVisibility(View.INVISIBLE);
                     videoView.setMediaController(mediaController);
 
-                    String url = "";
-                    if (flickrPhotos.get(currentPosition).getOriginalSecret() == null)
-                        url = "https://www.flickr.com/photos/" + userid + "/" + flickrPhotos.get(currentPosition).getId() + "/play/720p/" + flickrPhotos.get(currentPosition).getSecret();
-                    else
-                        url = "https://www.flickr.com/photos/" + userid + "/" + flickrPhotos.get(currentPosition).getId() + "/play/orig/" + flickrPhotos.get(currentPosition).getOriginalSecret();
-
+                    String url = mediaItem;
                     new DownloadVideoTask().execute(url);
                 }
                 currentPosition++;
@@ -447,7 +422,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void loadImagesFromFlickr() {
+    private void loadImagesFromWeb() {
         progress.setVisibility(View.VISIBLE);
         imageView.setVisibility(View.INVISIBLE);
         videoView.setVisibility(View.INVISIBLE);
@@ -459,50 +434,64 @@ public class MainActivity extends AppCompatActivity {
             startService(serviceIntent);
 
             Retrofit retrofit = new Retrofit.Builder()
-                    .baseUrl("https://api.flickr.com/services/rest/")
-                    .addConverterFactory(GsonConverterFactory.create())
+                    .baseUrl(playlistsUrl)
                     .client(new okhttp3.OkHttpClient())
                     .build();
 
-            FlickrApiService apiService = retrofit.create(FlickrApiService.class);
-            Call<FlickrApiResponse> call;
+            WebService apiService = retrofit.create(WebService.class);
+            Call<ResponseBody> call;
 
-            if (displayOption == 0)
-                call = apiService.getPublicPhotos(apikey, userid, per_page, "media,url_o,original_format");
-            else
-                call = apiService.searchPhotos(apikey, "", per_page, (customTag.equals("") ? "electricobjectslives": customTag), "media,url_o,original_format");
-            call.enqueue(new Callback<FlickrApiResponse>() {
+            call = apiService.getPlaylist(playlist);
+
+            call.enqueue(new Callback<ResponseBody>() {
                 @Override
-                public void onResponse(Call<FlickrApiResponse> call, Response<FlickrApiResponse> response) {
+                public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
                     if (response.isSuccessful()) {
-                        FlickrApiResponse apiResponse = response.body();
-                        if (apiResponse != null) {
-                            try {
-                                flickrPhotos = apiResponse.getPhotos().getPhotoList();
-                                if (flickrPhotos.size() == 0) {
-                                    customTag = ""; loadImagesFromFlickr(); return;
+                        try {
+                            String htmlString = response.body().string();
+                            Document document = Jsoup.parse(htmlString);
+
+                            mediaItems = new ArrayList<>();
+
+                            Elements links = document.select("a[href]");
+                            for (Element link : links) {
+                                String href = link.attr("href");
+                                if (!href.equals("../")) {
+                                    String absoluteLinkUrl = playlistsUrl + "/" + playlist + "/" + href;
+                                    mediaItems.add(absoluteLinkUrl);
+                                    System.out.println(absoluteLinkUrl);
                                 }
-                                currentPosition = 0;
-                                Collections.shuffle(flickrPhotos);
-                                startSlideshow();
-                            } catch (Exception ex) {
-                                Toast.makeText(MainActivity.this, "Flickr failure, check API key", Toast.LENGTH_SHORT).show();
-                                showSetupDialog();
                             }
+
+                            if (mediaItems.size() == 0) {
+                                System.out.println("No media items found");
+                                Toast.makeText(MainActivity.this, "Failed to find items in playlist, check playlists URL or playlist name", Toast.LENGTH_SHORT).show();
+                                showSetupDialog();
+                                return;
+                            }
+
+                            currentPosition = 0;
+                            Collections.shuffle(mediaItems);
+                            startSlideshow();
+
+                        } catch (Exception ex) {
+                            System.out.println(ex.toString());
+                            Toast.makeText(MainActivity.this, "Failed to parse playlist, check playlists URL or playlist name", Toast.LENGTH_SHORT).show();
+                            showSetupDialog();
                         }
                     }
                 }
 
                 @Override
-                public void onFailure(Call<FlickrApiResponse> call, Throwable t) {
-                    Toast.makeText(MainActivity.this, "Flickr failure", Toast.LENGTH_SHORT).show();
+                public void onFailure(Call<ResponseBody> call, Throwable t) {
+                    Toast.makeText(MainActivity.this, "Failed to retrieve playlists", Toast.LENGTH_SHORT).show();
                 }
             });
         } else {
             new android.os.Handler().postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    loadImagesFromFlickr(); // Retry loading images after delay
+                    loadImagesFromWeb(); // Retry loading images after delay
                 }
             }, 10000);
         }
@@ -652,7 +641,7 @@ public class MainActivity extends AppCompatActivity {
                             getWindow().setAttributes(params);
                         }
 
-                        int incominginterval = intent.getIntExtra("interval", 5);
+                        int incominginterval = intent.getIntExtra("interval", 300);
                         int incomingStartQuietHour = intent.getIntExtra("startQuietHour", -1);
                         int incomingEndQuietHour = intent.getIntExtra("endQuietHour", -1);
 
@@ -669,7 +658,7 @@ public class MainActivity extends AppCompatActivity {
                             interval = incominginterval;
                             startQuietHour = incomingStartQuietHour;
                             endQuietHour = incomingEndQuietHour;
-                            loadImagesFromFlickr();
+                            loadImagesFromWeb();
                         }
                     }
 
@@ -687,64 +676,21 @@ public class MainActivity extends AppCompatActivity {
                             getWindow().setAttributes(params);
                         }
 
-                        Retrofit retrofit = new Retrofit.Builder()
-                                    .baseUrl("https://api.flickr.com/services/rest/")
-                                    .addConverterFactory(GsonConverterFactory.create())
-                                    .client(new okhttp3.OkHttpClient())
-                                    .build();
-                        FlickrApiService apiService = retrofit.create(FlickrApiService.class);
-                            Call<FlickrGetSizesResponse> call = apiService.getSizes(apikey, intent.getStringExtra("imageid"));
-                            call.enqueue(new Callback<FlickrGetSizesResponse>() {
-                                @Override
-                                public void onResponse(Call<FlickrGetSizesResponse> call, Response<FlickrGetSizesResponse> response) {
-                                    if (response.isSuccessful()) {
-                                        FlickrGetSizesResponse flickrSizesResponse = response.body();
-                                        if (flickrSizesResponse != null) {
-                                            List<FlickrGetSizesResponse.FlickrImageSize> imageSizes = flickrSizesResponse.getSizes().getImageSizes();
-                                            for (FlickrGetSizesResponse.FlickrImageSize size : imageSizes) {
-                                                String label = size.getLabel();
-                                                String imageUrl = size.getSourceUrl();
-                                                if (type.equals("image") && label.equals("Original")) {
-                                                    loadImage(imageUrl);
-                                                    return;
-                                                }
-                                                if (type.equals("video") && label.equals("720p")) {
-                                                    loadVideo(imageUrl);
-                                                    return;
-                                                }
-                                            }
-                                            //couldn't find 720p, get 360p
-                                            for (FlickrGetSizesResponse.FlickrImageSize size : imageSizes) {
-                                                String label = size.getLabel();
-                                                if (type.equals("video") && label.equals("360p")) {
-                                                    loadVideo(size.getSourceUrl());
-                                                    return;
-                                                }
-                                            }
-                                            //couldn't find original image, find Large or Large 1600
-                                            if (type.equals("image")) {
-                                                for (int i= imageSizes.size() - 1; i >= 0; i--) {
-                                                    String label = imageSizes.get(i).getLabel();
-                                                    if (label.equals("Large") || label.equals("Large 1600")) {
-                                                        loadImage(imageSizes.get(i).getSourceUrl());
-                                                        return;
-                                                    }
-                                                }
-                                            }
-                                            Toast.makeText(MainActivity.this, "No source found.", Toast.LENGTH_SHORT).show();
-                                            slideshowpaused = false;
-                                            showNextImage();
-                                        }
-                                    }
-                                }
+                        String url = intent.getStringExtra("url");
+                        if (type.equals("image")) {
+                            loadImage(url);
+                            return;
+                        }
 
-                                @Override
-                                public void onFailure(Call<FlickrGetSizesResponse> call, Throwable t) {
-                                    Toast.makeText(MainActivity.this, "Flickr failure", Toast.LENGTH_SHORT).show();
-                                    slideshowpaused = false;
-                                    showNextImage();
-                                }
-                            });
+                        if (type.equals("video")) {
+                            loadVideo(url);
+                            return;
+                        }
+
+                        Toast.makeText(MainActivity.this, "No source found.", Toast.LENGTH_SHORT).show();
+                        slideshowpaused = false;
+                        showNextImage();
+
                     }
 
                     if (type.equals("resume")) {
@@ -756,21 +702,22 @@ public class MainActivity extends AppCompatActivity {
                         showNextImage();
                     }
 
-                    if (type.equals("tag")) {
+                    if (type.equals("playlist")) {
                         progress.setVisibility(View.VISIBLE);
                         imageView.setVisibility(View.INVISIBLE);
                         videoView.setVisibility(View.INVISIBLE);
 
-                        customTag = intent.getStringExtra("tag");
-                        if (customTag.equals("")) {
-                            SharedPreferences settings = getSharedPreferences("prefs", MODE_PRIVATE);
-                            displayOption = settings.getInt("displayOption", 0);
-                            customTag = settings.getString("customTag", "");
-                        } else {
-                            displayOption = 2;
-                        }
+                        playlist = intent.getStringExtra("playlist");
+
+                        SharedPreferences settings = getSharedPreferences("prefs", MODE_PRIVATE);
+                        SharedPreferences.Editor editor = settings.edit();
+                        editor.putString("playlist", playlist);
+                        editor.apply();
+
                         slideshowpaused = false;
-                        loadImagesFromFlickr();
+
+                        Toast.makeText(MainActivity.this, "Playlist received   playlist=" + playlist, Toast.LENGTH_LONG).show();
+                        loadImagesFromWeb();
                     }
 
                 }
