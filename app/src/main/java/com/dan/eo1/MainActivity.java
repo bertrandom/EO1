@@ -441,7 +441,7 @@ public class MainActivity extends AppCompatActivity {
             WebService apiService = retrofit.create(WebService.class);
             Call<ResponseBody> call;
 
-            call = apiService.getPlaylist(playlist);
+            call = apiService.getPlaylist("/" + playlist);
 
             call.enqueue(new Callback<ResponseBody>() {
                 @Override
@@ -483,8 +483,9 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 @Override
-                public void onFailure(Call<ResponseBody> call, Throwable t) {
+                public void onFailure(Call<ResponseBody> call, Throwable e) {
                     Toast.makeText(MainActivity.this, "Failed to retrieve playlists", Toast.LENGTH_SHORT).show();
+                    Log.e("hi", "error" + e.getMessage() + e.toString());
                 }
             });
         } else {
