@@ -10,8 +10,8 @@ If you used splat's app and want to try this one, you'll need to uninstall that 
 
 Some terminology:
 
-Playlists URL: This is the base URL where your playlists are stored in different directories.
-Playlist: This is the name of the playlist
+| Playlists URL      |   This is the base URL where your playlists are stored in different directories.    |
+| Playlist      |    This is the name of the playlist   |
 
 If you look at:
 http://eo.twonodes.com/
