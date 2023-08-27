@@ -10,6 +10,8 @@ If you used splat's app and want to try this one, you'll need to uninstall that 
 
 Some terminology:
 
+| name      | definition      |
+|  ---  |  ---  |
 | Playlists URL      |   This is the base URL where your playlists are stored in different directories.    |
 | Playlist      |    This is the name of the playlist   |
 
