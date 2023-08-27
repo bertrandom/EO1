@@ -2,26 +2,80 @@
 
 ![](e01.png "e01")
 
+This is fork of [splat's EO1 Android app](https://github.com/spalt/EO1) that used Flickr as a backing datastore. This uses an nginx directory listing as a datastore, which can either be on your local network or on the public Internet.
+
+If you used splat's app and want to try this one, you'll need to uninstall that app because this will be signed differently.
+
 ## Getting started
 
 ### Requirements 
 
 - You need a way to connect a keyboard and mouse to your EO1.  I got one of these -- https://www.amazon.com/gp/product/B01C6032G0/ -- and connected my USB keyboard to it, then my USB mouse to the keyboard.
-- Flickr API key:  Once you've signed up for [Flickr](https://www.flickr.com), go [here](https://www.flickr.com/services/apps/create/apply/), to create an "app".  Once you walk through the short wizard, your key will look like a series of numbers and letters. You will want the **public key**.
-- Flickr User ID:  Your user ID is in the URL bar when viewing your photos.  For example it is bolded in the following URL:  https://www.flickr.com/photos/ **193118297@N04** / — you only need the User ID, not the entire URL.
-- Upon setting up the app, it'll ask for these two pieces of info.  You can either type them in on the setup dialog, or put them into a file (the User ID, followed by a carriage return, followed by your Public API key).  Name this file **"config.txt"** and copy it to your EO1's "Downloads" folder.  (An easy way to do this is to email yourself the file then log into your email and download it using the EO1's web browser [described below]).
+- A place to host your images and video with your web server configured to do directory listing.
+- Upon setting up the app, it'll ask for these two pieces of info.  You can either type them in on the setup dialog, or put them into a file (the playlists URL, followed by a carriage return, followed by a playlist name).  Name this file **"config.txt"** and copy it to your EO1's "Downloads" folder.  (An easy way to do this is to email yourself the file then log into your email and download it using the EO1's web browser [described below]).
 
 ### Setup
 
-- Upload some EO art to your Flickr account.  There's a good collection here:  https://github.com/crushallhumans/eo1-iframe/tree/main/eo1_caches/mp4s -- MP4 videos and still images are supported.
+Create a directory to hold your art. Each subdirectory will be a playlist, inside those subdirectories you can put your images and video. Video must end in `.mp4` to be recognized as video, any other file will be treated as an image.
+
+You'll need to run a webserver to host your art - most webservers with directory listing should work, but I've only tested with nginx. Let me know if there's a webserver directory listing that appears to be incompatible.
+
+Here's an nginx config that I used:
+```
+server {
+    listen 80;
+    server_name eo.twonodes.com;
+    root /web/eo.twonodes.com;
+    index index.html;
+    location / {
+	autoindex on;
+        try_files $uri $uri/ =404;
+    }
+}
+```
+
+Note that the EO1 runs Android 4.4, which [does not support modern Lets Encrypt certificates](https://community.letsencrypt.org/t/several-sites-unreachable-with-android-4-4-since-chain-changes/165795). There may be a way around this by installing the active ISRG Root X1 certificate from [here](https://letsencrypt.org/certificates/), but at least on my device this would require adding a required PIN code to the device when it sleeps, which wouldn't work. If you figure out how to do this, let me know!
+
+This means that if you use Lets Encrypt for your https server, calls to your server will likely fail. I decided to host my art insecurely rather than deal with this.
+
 - Once you boot up your EO1 and it hangs on the "Getting Art" dialog, hit **WINDOWS + B** to open a web browser
 - You need to tell your EO1 to allow side-loading.  Swipe down on the top right and go to Settings > Security.  In there make sure "Unknown Sources" is checked.
-- Go back to the browser and go to this URL: https://github.com/spalt/EO1/releases/download/0.0.5/EO1.apk
+- Go back to the browser and go to this URL: http://eo.twonodes.com/EO1.apk
 - When it finishes, install the file by pulling down the notification bar and clicking it, then agreeing to the prompts.
 - Restart/power cycle your EO1
 - Because this APK is designated as a "Home screen replacement", when it boots, it will ask if you want to load the Electric Object app, or the EO1 app.  Select EO1 and choose "Always".
 - The first time the EO1 is run you will need to specify the information above.  Click OK to save and continue.  **To get back to the configuration screen later, push C on your connected keyboard** 
+
+Example configuration:
+
+Playlists URL: http://eo.twonodes.com
+Playlist: community
+
 - You can now unplug your mouse and keyboard and hang your EO1 back on the wall!
+
+### Controlling the EO1
+
+This app comes with a partner app, but I don't actually have an Android device to run the partner app. This doesn't mean you can't use the partner functionality - it uses sockets to communicate. This means that you can use `nc` from the CLI (or integrate this into your own client app):
+
+Examples:
+```
+echo "playlist,computing" | nc 192.168.1.205 12345
+echo "resume" | nc 192.168.1.205 12345
+echo "video,http://eo.twonodes.com/commissioned/Pi-Slices_Range.mp4" | nc 192.168.1.205 12345
+echo "image,http://eo.twonodes.com/community/14738453_3205017_lz.jpg" | nc 192.168.1.205 12345
+echo "options,1.0,300,23,7" | nc 192.168.1.205 12345
+```
+
+If you use image or video to load a single URL, your playlist will be paused. You should send a resume command to continue the playlist again.
+
+options parameters: brightness, interval (in seconds), sleep hour, wake hour
+
+`192.168.1.205` should be replaced by the IP address of your EO1, which you should see as a toast when it's starting a playlist.
+
+### New in 0.0.6
+
+Use nginx directory listing instead of Flickr as a backing store
+Add a "playlist" socket command
 
 ### New in 0.0.5
 
