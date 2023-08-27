@@ -8,6 +8,18 @@ If you used splat's app and want to try this one, you'll need to uninstall that 
 
 ## Getting started
 
+Some terminology:
+
+Playlists URL: This is the base URL where your playlists are stored in different directories.
+Playlist: This is the name of the playlist
+
+If you look at:
+http://eo.twonodes.com/
+
+you can see the basic structure.
+
+`http://eo.twonodes.com` would be the Playlist URL and `community` would be an example of a playlist.
+
 ### Requirements 
 
 - You need a way to connect a keyboard and mouse to your EO1.  I got one of these -- https://www.amazon.com/gp/product/B01C6032G0/ -- and connected my USB keyboard to it, then my USB mouse to the keyboard.
