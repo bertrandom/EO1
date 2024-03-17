@@ -441,7 +441,7 @@ public class MainActivity extends AppCompatActivity {
             WebService apiService = retrofit.create(WebService.class);
             Call<ResponseBody> call;
 
-            call = apiService.getPlaylist("/" + playlist);
+            call = apiService.getPlaylist("/" + playlist + "/");
 
             call.enqueue(new Callback<ResponseBody>() {
                 @Override
@@ -456,7 +456,7 @@ public class MainActivity extends AppCompatActivity {
                             Elements links = document.select("a[href]");
                             for (Element link : links) {
                                 String href = link.attr("href");
-                                if (!href.equals("../")) {
+                                if (!href.endsWith("/")) {
                                     String absoluteLinkUrl = playlistsUrl + "/" + playlist + "/" + href;
                                     mediaItems.add(absoluteLinkUrl);
                                     System.out.println(absoluteLinkUrl);
