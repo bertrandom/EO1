@@ -2,10 +2,12 @@ package com.dan.eo1;
 
 import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -17,6 +19,7 @@ import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -99,6 +102,25 @@ public class MainActivity extends AppCompatActivity {
     boolean autobrightness = true;
     float brightnesslevel = 0.5f;
 
+    private MyMessageService mService;
+    private boolean mBound = false;
+
+    private ServiceConnection connection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            MyMessageService.LocalBinder binder = (MyMessageService.LocalBinder) service;
+            mService = binder.getService();
+            mBound = true;
+
+//            int data = mService.getSomeData(); // Accessing data
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName arg0) {
+            mBound = false;
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -144,6 +166,9 @@ public class MainActivity extends AppCompatActivity {
         mSensorManager.registerListener(listener, mLightSensor, SensorManager.SENSOR_DELAY_UI);
 
         LocalBroadcastManager.getInstance(this).registerReceiver(messageReceiver, new IntentFilter("MSG_RECEIVED"));
+
+        bindService(new Intent(this, MyMessageService.class), connection, Context.BIND_AUTO_CREATE);
+
     }
 
     @Override
@@ -178,6 +203,7 @@ public class MainActivity extends AppCompatActivity {
             imageView.setVisibility(View.INVISIBLE);
             videoView.setVisibility(View.INVISIBLE);
             slideshowpaused = false;
+            mService.setSlideshowPaused(slideshowpaused);
             showNextImage();
         }
 
@@ -394,6 +420,7 @@ public class MainActivity extends AppCompatActivity {
                     imageView.setVisibility(View.VISIBLE);
 
                     String imageUrl = mediaItem;
+                    mService.setCurrentMediaUrl(imageUrl);
                     Picasso.get().load(imageUrl).fit().centerInside().into(imageView); //Picasso.get().load(imageUrl).fit().centerCrop().into(imageView);
                     progress.setVisibility(View.INVISIBLE);
 
@@ -406,9 +433,11 @@ public class MainActivity extends AppCompatActivity {
                     videoView.setMediaController(mediaController);
 
                     String url = mediaItem;
+                    mService.setCurrentMediaUrl(url);
                     new DownloadVideoTask().execute(url);
                 }
                 currentPosition++;
+                mService.setCurrentPosition(currentPosition);
             } catch (Exception ex) {
                 progress.setVisibility(View.VISIBLE);
                 Toast.makeText(MainActivity.this, "shownextimage err > " + ex.getMessage().toString(), Toast.LENGTH_SHORT).show();
@@ -451,6 +480,7 @@ public class MainActivity extends AppCompatActivity {
                             String htmlString = response.body().string();
                             Document document = Jsoup.parse(htmlString);
 
+                            mService.setPlaylist(playlist);
                             mediaItems = new ArrayList<>();
 
                             Elements links = document.select("a[href]");
@@ -463,6 +493,8 @@ public class MainActivity extends AppCompatActivity {
                                 }
                             }
 
+                            mService.setMediaItems(mediaItems);
+
                             if (mediaItems.size() == 0) {
                                 System.out.println("No media items found");
                                 Toast.makeText(MainActivity.this, "Failed to find items in playlist, check playlists URL or playlist name", Toast.LENGTH_SHORT).show();
@@ -471,6 +503,7 @@ public class MainActivity extends AppCompatActivity {
                             }
 
                             currentPosition = 0;
+                            mService.setCurrentPosition(currentPosition);
                             Collections.shuffle(mediaItems);
                             startSlideshow();
 
@@ -669,6 +702,7 @@ public class MainActivity extends AppCompatActivity {
                         videoView.setVisibility(View.INVISIBLE);
 
                         slideshowpaused = true;
+                        mService.setSlideshowPaused(slideshowpaused);
 
                         if (isInQuietHours) {
                             isInQuietHours = false;
@@ -679,17 +713,21 @@ public class MainActivity extends AppCompatActivity {
 
                         String url = intent.getStringExtra("url");
                         if (type.equals("image")) {
+                            mService.setCurrentMediaUrl(url);
                             loadImage(url);
                             return;
                         }
 
                         if (type.equals("video")) {
+                            mService.setCurrentMediaUrl(url);
                             loadVideo(url);
                             return;
                         }
 
                         Toast.makeText(MainActivity.this, "No source found.", Toast.LENGTH_SHORT).show();
                         slideshowpaused = false;
+                        mService.setSlideshowPaused(slideshowpaused);
+
                         showNextImage();
 
                     }
@@ -700,6 +738,7 @@ public class MainActivity extends AppCompatActivity {
                         videoView.setVisibility(View.INVISIBLE);
 
                         slideshowpaused = false;
+                        mService.setSlideshowPaused(slideshowpaused);
                         showNextImage();
                     }
 
@@ -716,6 +755,7 @@ public class MainActivity extends AppCompatActivity {
                         editor.apply();
 
                         slideshowpaused = false;
+                        mService.setSlideshowPaused(slideshowpaused);
 
                         Toast.makeText(MainActivity.this, "Playlist received   playlist=" + playlist, Toast.LENGTH_LONG).show();
                         loadImagesFromWeb();
