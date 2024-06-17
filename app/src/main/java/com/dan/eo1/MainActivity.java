@@ -14,8 +14,6 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.MediaPlayer;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -36,7 +34,6 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.Spinner;
-import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
 
@@ -53,15 +50,15 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.List;
+import java.util.Random;
 
 import okhttp3.ResponseBody;
 import retrofit2.Call;
@@ -77,8 +74,8 @@ import org.jsoup.select.Elements;
 
 public class MainActivity extends AppCompatActivity {
 
+    public int per_page = 500; //500 max
     public int interval = 300;
-    public int tempid = 0;
     private int currentPosition = 0;
     private Handler handler = new Handler();
     private ImageView imageView;
@@ -95,12 +92,13 @@ public class MainActivity extends AppCompatActivity {
     private SensorManager mSensorManager;
     private Sensor mLightSensor;
     private float lastLightLevel;
-    private int currentScreenBrightness;
     private boolean slideshowpaused = false;
     private ProgressBar progress;
     boolean screenon = true;
     boolean autobrightness = true;
     float brightnesslevel = 0.5f;
+    int page = 1;
+    int totalPages = 0;
 
     private MyMessageService mService;
     private boolean mBound = false;
@@ -123,7 +121,6 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         File cacheDir = new File(getCacheDir(), "picasso-cache");
@@ -133,14 +130,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        SharedPreferences settings = getSharedPreferences("prefs", MODE_PRIVATE);
-        playlistsUrl = settings.getString("playlistsUrl", "");
-        playlist = settings.getString("playlist", "");
-        startQuietHour = settings.getInt("startQuietHour", -1);
-        endQuietHour = settings.getInt("endQuietHour", -1);
-        interval = settings.getInt("interval", 300);
-        autobrightness = settings.getBoolean("autobrightness", true);
-        brightnesslevel = settings.getFloat("brightnesslevel", 0.5f);
+        loadsettings();
 
         if (playlistsUrl.isEmpty() || playlist.isEmpty()) {
             showSetupDialog();
@@ -169,15 +159,48 @@ public class MainActivity extends AppCompatActivity {
 
         bindService(new Intent(this, MyMessageService.class), connection, Context.BIND_AUTO_CREATE);
 
+        if (quietHoursCalc()) {
+            isInQuietHours = true;
+            WindowManager.LayoutParams params = getWindow().getAttributes();
+            params.screenBrightness = 0;
+            getWindow().setAttributes(params);
+            videoView.setVisibility(View.GONE);
+            imageView.setVisibility(View.GONE);
+        }
+
+        super.onCreate(savedInstanceState);
+    }
+
+    boolean quietHoursCalc() {
+        Calendar calendar = Calendar.getInstance();
+        int currentHour = calendar.get(Calendar.HOUR_OF_DAY);
+        int normalizedStart = (startQuietHour + 24) % 24;
+        int normalizedEnd = (endQuietHour + 24) % 24;
+        if ((currentHour >= normalizedStart && currentHour < normalizedEnd) ||
+                (normalizedStart > normalizedEnd && (currentHour >= normalizedStart || currentHour < normalizedEnd))) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    void loadsettings() {
+        SharedPreferences settings = getSharedPreferences("prefs", MODE_PRIVATE);
+        playlistsUrl = settings.getString("playlistsUrl", "");
+        playlist = settings.getString("playlist", "");
+        startQuietHour = settings.getInt("startQuietHour", -1);
+        endQuietHour = settings.getInt("endQuietHour", -1);
+        interval = settings.getInt("interval", 300);
+        autobrightness = settings.getBoolean("autobrightness", true);
+        brightnesslevel = settings.getFloat("brightnesslevel", 0.5f);
     }
 
     @Override
     protected void onResume() {
-        super.onResume();
-
         if (!playlistsUrl.isEmpty() || !playlist.isEmpty()) {
             loadImagesFromWeb();
         }
+        super.onResume();
     }
 
     @Override
@@ -191,33 +214,35 @@ public class MainActivity extends AppCompatActivity {
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_C) {
             showSetupDialog();
-            return true;
-        }
-
-        if (keyCode == KeyEvent.KEYCODE_A) {
-            Toast.makeText(MainActivity.this, "sensor = " + lastLightLevel, Toast.LENGTH_SHORT).show();
+            return super.onKeyDown(keyCode, event);
         }
 
         if (keyCode == KeyEvent.KEYCODE_SPACE) {
-            progress.setVisibility(View.VISIBLE);
+            if (!isInQuietHours) progress.setVisibility(View.VISIBLE);
             imageView.setVisibility(View.INVISIBLE);
             videoView.setVisibility(View.INVISIBLE);
             slideshowpaused = false;
             mService.setSlideshowPaused(slideshowpaused);
             showNextImage();
+            return super.onKeyDown(keyCode, event);
         }
 
-        if (keyCode == 132) {
+        if (keyCode == 132 || keyCode == 134) {
             //top button pushed
             WindowManager.LayoutParams params = getWindow().getAttributes();
             if (screenon) {
                 params.screenBrightness = 0;
                 screenon = false;
+                imageView.setVisibility(View.INVISIBLE);
+                videoView.setVisibility(View.INVISIBLE);
             } else {
-                params.screenBrightness = 10;
+                params.screenBrightness = brightnesslevel;
                 screenon = true;
+                imageView.setVisibility(View.VISIBLE);
+                videoView.setVisibility(View.VISIBLE);
             }
             getWindow().setAttributes(params);
+            return super.onKeyDown(keyCode, event);
         }
 
         return super.onKeyDown(keyCode, event);
@@ -348,7 +373,11 @@ public class MainActivity extends AppCompatActivity {
 
                             Toast.makeText(MainActivity.this, "Saved!  Hit 'C' to come back here later.", Toast.LENGTH_SHORT).show();
 
+                            if (quietHoursCalc()) isInQuietHours = true; else isInQuietHours = false;
+
                             loadImagesFromWeb();
+
+                            if (isInQuietHours) adjustScreenBrightness(0);
                         } else {
                             Toast.makeText(MainActivity.this, "Please enter User ID and API Key", Toast.LENGTH_SHORT).show();
                         }
@@ -364,44 +393,67 @@ public class MainActivity extends AppCompatActivity {
         builder.show();
     }
 
-
     private void startSlideshow() {
         handler.removeCallbacksAndMessages(null);
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                Calendar calendar = Calendar.getInstance();
-                int currentHour = calendar.get(Calendar.HOUR_OF_DAY);
-                int normalizedStart = (startQuietHour + 24) % 24;
-                int normalizedEnd = (endQuietHour + 24) % 24;
-                if ((currentHour >= normalizedStart && currentHour < normalizedEnd) ||
-                   (normalizedStart > normalizedEnd && (currentHour >= normalizedStart || currentHour < normalizedEnd))) {
-                    if (!isInQuietHours) {
-                        //entering quiet, turn off screen
-                        WindowManager.LayoutParams params = getWindow().getAttributes();
-                        params.screenBrightness = 0;
-                        getWindow().setAttributes(params);
-                        videoView.setVisibility(View.GONE);
-                        imageView.setVisibility(View.GONE);
-
-                        isInQuietHours = true;
-                    }
-                } else {
-                    if (isInQuietHours) {
-                        //exiting quiet, turn on screen
-                        WindowManager.LayoutParams params = getWindow().getAttributes();
-                        params.screenBrightness = 1f;
-                        getWindow().setAttributes(params);
-
-                        isInQuietHours = false;
-                    }
-                    showNextImage();
-                }
+                showSlideshow();
                 handler.postDelayed(this, 1000 * interval);
             }
         }, 1000 * interval);
 
-        showNextImage();
+        showSlideshow();
+    }
+
+    private void showSlideshow() {
+        Toast.makeText(MainActivity.this, "showslideshow " + quietHoursCalc() + " " + autobrightness, Toast.LENGTH_LONG).show();
+        if (quietHoursCalc()) {
+            if (!isInQuietHours) {
+                //entering quiet, turn off screen
+                isInQuietHours = true;
+                WindowManager.LayoutParams params = getWindow().getAttributes();
+                params.screenBrightness = 0;
+                getWindow().setAttributes(params);
+                videoView.setVisibility(View.GONE);
+                imageView.setVisibility(View.GONE);
+            }
+        } else {
+            if (isInQuietHours) {
+                isInQuietHours = false;
+            }
+            if (autobrightness) {
+                adjustScreenBrightness(lastLightLevel);
+            } else {
+                WindowManager.LayoutParams params = getWindow().getAttributes();
+                params.screenBrightness = brightnesslevel;
+                getWindow().setAttributes(params);
+            }
+            showNextImage();
+        }
+    }
+
+    public static String getMD5Hash(String input) {
+        try {
+            // Create MessageDigest instance for MD5
+            MessageDigest md = MessageDigest.getInstance("MD5");
+
+            // Add input bytes to digest
+            md.update(input.getBytes());
+
+            // Get the hash bytes
+            byte[] byteData = md.digest();
+
+            // Convert the byte to hex format
+            StringBuilder sb = new StringBuilder();
+            for (byte b : byteData) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void showNextImage() {
@@ -420,9 +472,13 @@ public class MainActivity extends AppCompatActivity {
                     imageView.setVisibility(View.VISIBLE);
 
                     String imageUrl = mediaItem;
-                    mService.setCurrentMediaUrl(imageUrl);
                     Picasso.get().load(imageUrl).fit().centerInside().into(imageView); //Picasso.get().load(imageUrl).fit().centerCrop().into(imageView);
                     progress.setVisibility(View.INVISIBLE);
+
+                    mService.setCurrentMediaUrl(imageUrl);
+
+                    currentPosition++;
+                    mService.setCurrentPosition(currentPosition);
 
                 } else {
                     imageView.setVisibility(View.INVISIBLE);
@@ -430,17 +486,15 @@ public class MainActivity extends AppCompatActivity {
                     MediaController mediaController = new MediaController(this);
                     mediaController.setAnchorView(videoView);
                     mediaController.setVisibility(View.INVISIBLE);
+
                     videoView.setMediaController(mediaController);
 
                     String url = mediaItem;
                     mService.setCurrentMediaUrl(url);
-                    new DownloadVideoTask().execute(url);
+                    new DownloadVideoTask().execute(url, getMD5Hash(url));
                 }
-                currentPosition++;
-                mService.setCurrentPosition(currentPosition);
             } catch (Exception ex) {
                 progress.setVisibility(View.VISIBLE);
-                Toast.makeText(MainActivity.this, "shownextimage err > " + ex.getMessage().toString(), Toast.LENGTH_SHORT).show();
                 new android.os.Handler().postDelayed(new Runnable() {
                     @Override
                     public void run() {
@@ -452,12 +506,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadImagesFromWeb() {
-        progress.setVisibility(View.VISIBLE);
+        if (!isInQuietHours) progress.setVisibility(View.VISIBLE);
         imageView.setVisibility(View.INVISIBLE);
         videoView.setVisibility(View.INVISIBLE);
 
-        if (isNetworkAvailable()) {
-            Toast.makeText(MainActivity.this, "IP = " + getIPAddress(), Toast.LENGTH_LONG).show();
+        if (Util.isNetworkAvailable(this)) {
+            Toast.makeText(MainActivity.this, "IP = " + Util.getIPAddress(), Toast.LENGTH_LONG).show();
 
             Intent serviceIntent = new Intent(this, MyMessageService.class);
             startService(serviceIntent);
@@ -531,18 +585,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isNetworkAvailable() {
-        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
-        return activeNetworkInfo != null && activeNetworkInfo.isConnected();
-    }
-
-    private View getLabel(String text) {
-        TextView textView = new TextView(this);
-        textView.setText(text);
-        return textView;
-    }
-
     private void adjustScreenBrightness(float lightValue){
         if (autobrightness) {
             if (!isInQuietHours) {
@@ -550,7 +592,7 @@ public class MainActivity extends AppCompatActivity {
                 float maxBrightness = 1.0f; // Maximum brightness value (0 to 1)
                 float minBrightness = 0.0f; // Minimum brightness value (0 to 1)
 
-                // Map the light sensor value (0 to 25) to the desired brightness range (0 to 1)
+                // Map the light sensor value (0 to 30) to the desired brightness range (0 to 1)
                 float brightness = (lightValue / 30f) * (maxBrightness - minBrightness) + minBrightness;
 
                 // Make sure brightness is within the valid range
@@ -565,61 +607,51 @@ public class MainActivity extends AppCompatActivity {
         lastLightLevel = lightValue;
     }
 
-    private int getSelectedOptionIndex(RadioGroup radioGroup) {
-        int checkedRadioButtonId = radioGroup.getCheckedRadioButtonId();
-        View checkedRadioButton = radioGroup.findViewById(checkedRadioButtonId);
-        return radioGroup.indexOfChild(checkedRadioButton);
-    }
-
-    private String getIPAddress() {
-        try {
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface networkInterface = interfaces.nextElement();
-                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
-                while (addresses.hasMoreElements()) {
-                    InetAddress address = addresses.nextElement();
-                    if (!address.isLoopbackAddress() && address.getAddress().length == 4) {
-                        return address.getHostAddress();
-                    }
-                }
-            }
-        } catch (SocketException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
     private class DownloadVideoTask extends AsyncTask<String, Void, String> {
+        private static final int CONNECTION_TIMEOUT = 15000;
+        private static final int MAX_RETRIES = 3;
 
         @Override
         protected String doInBackground(String... params) {
             String videoUrl = params[0];
-            try {
-                // Download the video from the URL
-                URL url = new URL(videoUrl);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.connect();
-
-                File tempFile = new File(getCacheDir(), "temp" + tempid + ".mp4");
-                FileOutputStream outputStream = new FileOutputStream(tempFile);
-
-                tempid++;
-                if (tempid == 5) tempid=0;
-
-                InputStream inputStream = connection.getInputStream();
-                byte[] buffer = new byte[1024];
-                int bytesRead;
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    outputStream.write(buffer, 0, bytesRead);
-                }
-                outputStream.close();
-                inputStream.close();
-
-                return tempFile.getPath();
-            } catch (IOException e) {
-                return "ERR: " + e.getMessage();
+            String videoId = params[1];
+            if (new File(getCacheDir(), videoId + ".mp4").exists()) {
+                return new File(getCacheDir(), videoId + ".mp4").getPath();
             }
+
+            Util.cacheCleanup(getCacheDir());
+
+            int retryCount = 0;
+            while (retryCount < MAX_RETRIES) {
+                try {
+                    // Download the video from the URL
+                    URL url = new URL(videoUrl);
+                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                    connection.setConnectTimeout(CONNECTION_TIMEOUT);
+                    connection.connect();
+
+                    File tempFile = new File(getCacheDir(), videoId + ".mp4");
+                    FileOutputStream outputStream = new FileOutputStream(tempFile);
+
+                    InputStream inputStream = connection.getInputStream();
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                    outputStream.close();
+                    inputStream.close();
+
+                    return tempFile.getPath();
+                } catch (SocketTimeoutException e) {
+                    retryCount++;
+                } catch (IOException e) {
+                    retryCount++;
+                } catch (Exception e) {
+                    retryCount++;
+                }
+            }
+            return "ERR: Timeout";
         }
 
         @Override
@@ -634,6 +666,8 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onPrepared(MediaPlayer mediaPlayer) {
                         mediaPlayer.setLooping(true);
+                        currentPosition++;
+                        mService.setCurrentPosition(currentPosition);
                         videoView.start();
                     }
                 });
@@ -641,7 +675,9 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public boolean onError(MediaPlayer mediaPlayer, int i, int i1) {
                         progress.setVisibility(View.VISIBLE);
-                        Toast.makeText(MainActivity.this, "mediaplayer ERR> ", Toast.LENGTH_SHORT).show();
+                        currentPosition++;
+                        mService.setCurrentPosition(currentPosition);
+
                         showNextImage();
                         return true;
                     }
@@ -692,7 +728,9 @@ public class MainActivity extends AppCompatActivity {
                             interval = incominginterval;
                             startQuietHour = incomingStartQuietHour;
                             endQuietHour = incomingEndQuietHour;
+                            if (quietHoursCalc()) isInQuietHours = true; else isInQuietHours = false;
                             loadImagesFromWeb();
+                            if (isInQuietHours) adjustScreenBrightness(0);
                         }
                     }
 
@@ -720,7 +758,7 @@ public class MainActivity extends AppCompatActivity {
 
                         if (type.equals("video")) {
                             mService.setCurrentMediaUrl(url);
-                            loadVideo(url);
+                            loadVideo(url, getMD5Hash(url));
                             return;
                         }
 
@@ -736,6 +774,13 @@ public class MainActivity extends AppCompatActivity {
                         progress.setVisibility(View.VISIBLE);
                         imageView.setVisibility(View.INVISIBLE);
                         videoView.setVisibility(View.INVISIBLE);
+
+                        if (isInQuietHours) {
+                            isInQuietHours = false;
+                            WindowManager.LayoutParams params = getWindow().getAttributes();
+                            params.screenBrightness = brightnesslevel;
+                            getWindow().setAttributes(params);
+                        }
 
                         slideshowpaused = false;
                         mService.setSlideshowPaused(slideshowpaused);
@@ -766,14 +811,14 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
-    public void loadVideo(String url) {
+    public void loadVideo(String url, String id) {
         MediaController mediaController = new MediaController(MainActivity.this);
         mediaController.setAnchorView(videoView);
         mediaController.setVisibility(View.INVISIBLE);
 
         videoView.setMediaController(mediaController);
 
-        new DownloadVideoTask().execute(url);
+        new DownloadVideoTask().execute(url, id);
     }
 
     public void loadImage(String url) {

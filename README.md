@@ -66,6 +66,7 @@ Playlists URL: http://eo.twonodes.com
 Playlist: community
 
 - You can now unplug your mouse and keyboard and hang your EO1 back on the wall!
+- See "Partner App" below for instructions on installing the companion app on your Android device.
 
 ### Controlling the EO1
 
@@ -109,11 +110,11 @@ Device app:
 Partner app:
 - Handles intents from Flickr app in a better way (you must upgrade the partner app if you update to 0.0.4 on the device)
 
-### New in 0.0.3
+### Partner App
 
-- New: "Partner App" (for Android) runs on your phone or mobile device and allows you to push images or video directly from the <A href="https://play.google.com/store/apps/details?id=com.flickr.android&hl=en_US&gl=US">Flickr Android App</a> using the share icon, assuming you are running on the same network as your EO1 device.  Running the Partner App from the Start menu of your phone allows you to skip to the next item in the current slideshow or resume the slideshow after sharing an individual item.  You can also update the current Tag (original Tag will be restored next time the device restarts).  You must allow Unknown Sources to install this app and point your phones web browser to https://github.com/spalt/EO1/releases/download/0.0.5/EO1-Partner.apk (I may publish this to the Play store in the near furture).
-- Updated: Images will be displayed using the "Center Inside" cropping strategy
-- Updated: Changed Flickr API to use the highest resolution image (if allowed) and video.
+- A "Partner App" (for Android) runs on your phone or mobile device and allows you to push images or video directly from the <A href="https://play.google.com/store/apps/details?id=com.flickr.android&hl=en_US&gl=US">Flickr Android App</a> using the share icon, assuming you are running on the same network as your EO1 device.  Running the Partner App from the Start menu of your phone allows you to skip to the next item in the current slideshow or resume the slideshow after sharing an individual item.  You can also update the current Tag (original Tag will be restored next time the device restarts), adjust brightness and change your slideshow interval.
+- To install, you must allow "Unknown Sources" on your device.
+- Point your device web browser to https://github.com/spalt/EO1/releases/download/0.0.6/EO1-Partner.apk and follow the prompts to install.  You may need to agree to several warnings.
 
 ### New in 0.0.2
 
